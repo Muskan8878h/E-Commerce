@@ -59,9 +59,41 @@ query=""" select customer_state, count(customer_id) from customers
 cur.execute(query)
 data=cur.fetchall()
 df=pd.DataFrame(data,columns=["State","Number of Customers"])
-print(df)
-plt.bar(df["State"],df["Number of Customers"])
-plt.xlabel("States")
-plt.ylabel("Number of Customers")
-plt.xticks(rotation=90)
+# print(df)
+# plt.bar(df["State"],df["Number of Customers"])
+# plt.xlabel("States")
+# plt.ylabel("Number of Customers")
+# plt.xticks(rotation=90)  #name at the bottom of bar table will be rotated by 90 degree
+# plt.show()
+
+
+
+# 6. Calculate the number of orders per month in 2018.
+query=""" select MONTHNAME(order_purchase_timestamp) month, count(order_id) orders
+            from orders
+            where YEAR(order_purchase_timestamp)=2018
+            group by month
+        """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Month","Number of Orders"])
+# print(df)
+o=["January","February","March","April","May","June","July","August","September","October","November","December"]
+ax=sns.barplot(x=df["Month"],y=df["Number of Orders"],data=df, order=o)
+ax.bar_label(ax.containers[0])  #to show the number on top of bar
 plt.show()
+
+
+# 7. Find the average number of products per order, grouped by customer city.
+query=""" select c.customer_city, 
+            round (avg(oi_count.product_count),2) avg_products_per_order
+            from customers c join orders o on
+            c.customer_id = o.customer_id
+            join (
+                select order_id, count(product_id) product_count
+                from order_items
+                group by order_id
+            ) oi_count on
+            o.order_id = oi_count.order_id
+            group by c.customer_city
+        """
