@@ -2,6 +2,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import mysql.connector
+import numpy as np
 
 db=mysql.connector.connect(
     host="localhost",
@@ -78,22 +79,69 @@ cur.execute(query)
 data=cur.fetchall()
 df=pd.DataFrame(data,columns=["Month","Number of Orders"])
 # print(df)
-o=["January","February","March","April","May","June","July","August","September","October","November","December"]
-ax=sns.barplot(x=df["Month"],y=df["Number of Orders"],data=df, order=o)
-ax.bar_label(ax.containers[0])  #to show the number on top of bar
-plt.show()
+# o=["January","February","March","April","May","June","July","August","September","October","November","December"]
+# ax=sns.barplot(x=df["Month"],y=df["Number of Orders"],data=df, order=o)
+# ax.bar_label(ax.containers[0])  #to show the number on top of bar
+# plt.show()
 
 
 # 7. Find the average number of products per order, grouped by customer city.
-query=""" select c.customer_city, 
-            round (avg(oi_count.product_count),2) avg_products_per_order
-            from customers c join orders o on
-            c.customer_id = o.customer_id
-            join (
-                select order_id, count(product_id) product_count
-                from order_items
-                group by order_id
-            ) oi_count on
-            o.order_id = oi_count.order_id
-            group by c.customer_city
+query=""" with count_per_order as (
+            select orders.order_id, orders.customer_id,
+            count(order_items.order_id) as oc
+            from orders
+            join order_items on
+            orders.order_id = order_items.order_id
+            group by orders.order_id, orders.customer_id)
+
+            select customers.customer_city,
+            round(avg(count_per_order.oc),2) 
+            from customers
+            join count_per_order on
+            customers.customer_id = count_per_order.customer_id
+            group by customers.customer_city
         """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Customer City","Avg Products per Order"])
+# print(df)
+
+
+
+# 8. Calculate the percentage of total revenue contributed by each product category.
+query="""  select upper(products.product_category) category,
+            round(sum(payments.payment_value)/(select sum(payment_value) from payments)*100,2)
+            as category_sales
+            from products
+            join order_items on
+            products.product_id = order_items.product_id
+            join payments on
+            order_items.order_id = payments.order_id
+            group by category order by category_sales desc
+
+        """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Product Category","Percentage of Total Revenue"])
+# print(df)
+
+
+# 9. Identify the correlation between product price and the number of times a product has been purchased.
+query="""  select products.product_category, 
+            count(order_items.product_id),
+            round(avg(order_items.price),2)
+            from products
+            join order_items on
+            products.product_id = order_items.product_id
+            group by products.product_category
+        """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Product category","Purchase Count","Average Price"])
+print(df)
+
+arr1=df["Purchase Count"]
+arr2=df["Average Price"]
+correlation=np.corrcoef(arr1,arr2)
+# corelation exists between -1 to 1
+print("Correlation between product price and number of times a product has been purchased:\n", correlation)  # there is no empact of price on purchase count
