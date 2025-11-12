@@ -164,10 +164,131 @@ query="""  select *, dense_rank() over (order by revenue desc) as Revenue_Rank
 cur.execute(query)
 data=cur.fetchall()
 df=pd.DataFrame(data,columns=["Seller ID","Total Revenue","Revenue Rank"])
-sns.barplot(x=df["Seller ID"],y=df["Total Revenue"],data=df)
-df=df.head(5)
-plt.xticks(rotation=90)
-plt.show()
 # print(df)
 
 
+
+
+# 11. Calculate the moving average of order values for each customer over their order history.
+query=""" 
+        select customer_id, order_purchase_timestamp, payment,
+        round(avg(payment) over (
+            partition by customer_id
+            order by order_purchase_timestamp
+            rows between 2 preceding and current row
+        ),2) as moving_average
+        from(
+            select orders.customer_id, orders.order_purchase_timestamp,
+            payments.payment_value as payment
+            from payments 
+            join orders on
+            payments.order_id = orders.order_id
+        ) as customer_orders
+    """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Customer ID","Order Purchase Timestamp","Payment Value","Moving Average of Order Values"])
+# print(df)
+
+
+
+# 12. Calculate the cumulative sales per month for each year.
+query="""  select year, month,Monthly_Sales, sum(Monthly_Sales)
+            over (order by year, month) Cumulative_Sales
+            from(
+                select YEAR(orders.order_purchase_timestamp) as Year,
+                MONTH(orders.order_purchase_timestamp) as Month,
+                round(sum(payments.payment_value),2) as Monthly_Sales
+                from orders
+                join payments on
+                orders.order_id = payments.order_id
+                group by Year, Month
+                order by Year, MONTH(order_purchase_timestamp)
+            ) as a
+        """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Year","Month","Payment","Cumulative Sales"])
+# print(df)
+
+
+
+# 13. Calculate the year-over-year growth rate of total sales.
+query="""  with yearly_sales as (
+            select YEAR(orders.order_purchase_timestamp) as year,
+            round(sum(payments.payment_value),2) as total_sales
+            from orders
+            join payments on
+            orders.order_id = payments.order_id
+            group by year 
+            order by year
+        )
+        select year,
+        ((total_sales - lag(total_sales,1) over (order by year))
+        /lag(total_sales,1) over (order by year))*100 as YoY_Growth_Rate
+        from yearly_sales
+    """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Year","YoY Growth Rate (%)"])
+# print(df)
+
+
+
+
+
+# 14. Calculate the retention rate of customers, defined as the percentage of customers who make another purchase within 6 months of their first purchase.
+query="""  with a as (
+            select customers.customer_id,
+            min(orders.order_purchase_timestamp) as first_order
+            from customers
+            join orders on
+            customers.customer_id = orders.customer_id
+            group by customers.customer_id
+        ),
+        b as (
+            select a.customer_id,
+            count(distinct orders.order_purchase_timestamp) as repeat_orders
+            from a
+            join orders on
+            a.customer_id = orders.customer_id
+            and orders.order_purchase_timestamp > first_order
+            and orders.order_purchase_timestamp < date_add(first_order, interval 6 month)
+            group by a.customer_id
+        )
+        select 100* (count(distinct a.customer_id)/ count(distinct b.customer_id)) 
+        from a left join b on
+        a.customer_id = b.customer_id
+    """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Retention Rate (%)"])
+# print(df)
+
+
+
+
+# 15. Identify the top 3 customers who spent the most money in each year.
+query="""  select years, customer_id, payment, d_rank
+            from(
+                select year(orders.order_purchase_timestamp) as years,
+                orders.customer_id,
+                round(sum(payments.payment_value),2) as payment,
+                dense_rank() over (
+                    partition by year(orders.order_purchase_timestamp)
+                    order by sum(payments.payment_value) desc
+                ) as d_rank
+                from orders
+                join payments on
+                orders.order_id = payments.order_id
+                group by year(orders.order_purchase_timestamp), 
+                orders.customer_id) as a
+                where d_rank <= 3
+    """
+cur.execute(query)
+data=cur.fetchall()
+df=pd.DataFrame(data,columns=["Year","Customer ID","Total Spent","Rank"])
+print(df)
+
+sns.barplot(x=df["Customer ID"],y=df["Total Spent"],data=df, hue=df["Year"])
+plt.show()
